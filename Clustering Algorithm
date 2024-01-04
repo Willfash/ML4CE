@@ -1,0 +1,130 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics import accuracy_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+
+
+def fit_preprocess(data_path):
+    # Load data from file
+    data = pd.read_csv(data_path)
+
+    # Define delay mappings for specific columns
+    delay_columns_mappings = {
+        'XMEAS(23)': 6, 'XMEAS(24)': 6, 'XMEAS(25)': 6, 'XMEAS(26)': 6, 'XMEAS(27)': 6, 
+        'XMEAS(28)': 6, 'XMEAS(29)': 6, 'XMEAS(30)': 6, 'XMEAS(31)': 6, 'XMEAS(32)': 6, 
+        'XMEAS(33)': 6, 'XMEAS(34)': 6, 'XMEAS(35)': 6, 'XMEAS(36)': 6, 'XMEAS(37)': 15,
+        'XMEAS(38)': 15, 'XMEAS(39)': 15, 'XMEAS(40)': 15, 'XMEAS(41)': 15
+    }
+
+    # Adjust for time delays based on the mappings
+    sampling_time = 3  # Sampling time in minutes
+    for column, delay in delay_columns_mappings.items():
+        shift_steps = delay // sampling_time
+        data[column] = data[column].shift(-shift_steps)
+
+    # Fill NaN values that appear due to shifting
+    data.ffill(inplace=True)
+
+    # Standardize the features, excluding the label column
+    feature_columns = [col for col in data.columns if col != 'label']
+    scaler = StandardScaler()
+    data[feature_columns] = scaler.fit_transform(data[feature_columns])
+
+    # Store and return the preprocessing parameters (mean and std for each feature)
+    preprocess_params = {
+        'mean': scaler.mean_,
+        'std': scaler.scale_
+    }
+
+    return preprocess_params
+
+def load_and_preprocess(data_path, preprocess_params):
+    # Load the dataset
+    data = pd.read_csv(data_path)
+
+    # Separate features and labels
+    feature_columns = [col for col in data.columns if col != 'label']
+    X = data[feature_columns]
+    y = data['label']
+
+    scaler = StandardScaler()
+    scaler.mean_ = preprocess_params['mean']
+    scaler.scale_ = preprocess_params['std']
+    X_scaled = scaler.transform(X)
+    return X_scaled, y
+
+def fit_model(X):
+    # Train the model
+    model = KMeans(n_clusters=2, n_init=10, random_state=5)
+    model.fit(X)
+    return model
+
+def predict(X, model):
+    # Predict the clusters for the data points
+    clusters = model.predict(X)
+
+    # Determine the anomaly cluster (assumed to be the smaller cluster)
+    anomaly_cluster = np.argmin(np.bincount(clusters))
+
+    # Flag data points in the anomaly cluster as anomalies
+    anomalies = clusters == anomaly_cluster
+
+    # Convert boolean flags to integers (0 for normal, 1 for anomaly)
+    return anomalies.astype(int)
+
+def main():
+    """
+    Main function to test the code when running this script standalone. Not
+    mandatory for the deliverable but useful for the grader to check the code
+    workflow and for the student to check it works as expected.
+    """
+    train_path = 'https://raw.githubusercontent.com/iraola/ML4CE-AD/main/coursework/data/data_train.csv'
+    test_path = 'https://raw.githubusercontent.com/iraola/ML4CE-AD/main/coursework/data/data_test.csv'
+
+    # Set up preprocessing
+    preprocess_params = fit_preprocess(train_path)
+
+    # Load and preprocess data
+    X_train, y_train = load_and_preprocess(train_path, preprocess_params)
+    X_test, y_test = load_and_preprocess(test_path, preprocess_params)
+
+    # Get the detection model
+    threshold = fit_model(X_train)
+
+    # Check performance on data
+    # (just for us to see it works properly, the grader might use other data)
+    y_pred_train = predict(X_train, threshold)
+    print('Training accuracy: ', accuracy_score(y_train, y_pred_train))
+    y_pred_test = predict(X_test, threshold)
+    print('Test accuracy: ', accuracy_score(y_test, y_pred_test))
+
+    cm_train = confusion_matrix(y_train, y_pred_train)
+    cm_test = confusion_matrix(y_test, y_pred_test)
+
+    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+
+    sns.heatmap(cm_train, annot=True, ax=ax[0], fmt='g')
+    ax[0].set_title('Training Data Confusion Matrix')
+    ax[0].set_xlabel('Predicted Labels')
+    ax[0].set_ylabel('True Labels')
+
+    sns.heatmap(cm_test, annot=True, ax=ax[1], fmt='g')
+    ax[1].set_title('Test Data Confusion Matrix')
+    ax[1].set_xlabel('Predicted Labels')
+    ax[1].set_ylabel('True Labels')
+
+    plt.show()
+
+
+if __name__ == '__main__':
+    main()
+
+
+
+
